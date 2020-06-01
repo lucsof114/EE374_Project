@@ -33,6 +33,9 @@ class Prism:
         self.propMap = {}
         self.leaderSequence = []
         self.ledger = []
+        self.txPerSec = None
+        self.confirmation_latency = []
+        self.numBlocksMinded = 0
 
     def stepForward(self) : 
         # update super block
@@ -41,16 +44,16 @@ class Prism:
         #Mine Block
         self.time += np.random.exponential(1/self.lh) + self.delta
         numForked = np.random.poisson(self.lh*self.delta)
-
-       # numForked = 0 # to be removed
-        print(numForked)
+        self.numBlocksMinded += numForked + 1
+        #print(self.numBlocksMinded)
         for _ in range(numForked + 1): # number of forked blocks plus one none forked block
             self.getNewBlock()
-
-        self.updateMaps()
-        self.updateProb()
-        self.updateLedger()
-    
+        if self.numBlocksMinded - self.params["eval_every"] > 0:
+            self.numBlocksMinded = 0
+            self.updateMaps()
+            self.updateProb()
+            self.updateLedger()
+        
 
     def updateLedger(self):
         for i, leader in enumerate(self.leaderSequence): 
@@ -63,11 +66,12 @@ class Prism:
                     self.ledger.append(self.txchain.txList[txind].txs)
             for txind in blk.txRefs:
                 self.ledger.append(self.txchain.txList[txind].txs)
- 
-
-
+        self.txPerSec = len(self.ledger)*self.txPerBlock/self.time
+        print(self.txPerSec)
     
     def updateMaps(self): 
+        self.levelMap = {}
+        self.propMap = {}
         for i in range(self.numVoterChains): 
             vchain = self.voterChains[i]
             if not vchain.isgenesis: 
@@ -76,7 +80,7 @@ class Prism:
                     for prop in vnode.reference_link:
                         self.proposerChain.propList[prop].numVotes += 1
                         if prop in self.propMap:
-                            if not vnode.ind in self.propMap[prop]: 
+                            if not (i, vnode.ind) in self.propMap[prop]: 
                                 self.propMap[prop].append((i, vnode.ind))
                         else :
                             self.propMap[prop] = [(i,vnode.ind)]
@@ -103,6 +107,7 @@ class Prism:
                     dbar += self.voterChains[i].voterList[bv].depth
                 sumVotes += self.proposerChain.propList[bp].numVotes
                 self.proposerChain.propList[bp].numVotes = 0 ## maybe
+
             dbar /= sumVotes
             da = self.beta*dbar/((1-self.alpha)*(1-self.beta))
             va = self.numVoterChains
@@ -112,7 +117,7 @@ class Prism:
                 for i, bv in self.propMap[bp]:
                     dij = self.voterChains[i].voterList[bv].depth
                     Pij = poisson.cdf(dij, da)
-                    for k in range(dij):
+                    for k in range(dij + 1):
                         Pij -= poisson.pmf(k, da)*(self.beta/(1-self.beta))**(dij + 1 - k) 
 
                     mu_i += Pij 
@@ -123,20 +128,17 @@ class Prism:
             for bpL in self.levelMap[level]:
                 isleader = True
                 vl = self.proposerChain.propList[bpL].revProbLow
-                for bpi in self.levelMap[level]:
-                    vih = self.proposerChain.propList[bpi].revProbLow + va
-                    if vl < vih: 
+                for bpi in self.levelMap[level]:                    vih = self.proposerChain.propList[bpi].revProbLow + va
+                    if vl < vih or vl < va: 
                         isleader = False
                 if isleader: 
                     self.proposerChain.propList[bpL].isLeader = True
+                    dt = self.time -  self.proposerChain.propList[bpL].time
+                    self.confirmation_latency.append(dt)
                     self.leaderSequence.append(bpL)
                 else:
                     isleader = True
-                    if self.proposerChain.propList[bpL].isLeader == True :
-                        assert True, "Fucked up 2"
-                    self.proposerChain.propList[bpL].isLeader = False
-
-
+                    assert self.proposerChain.propList[bpL].isLeader == False, "persistance failed!"
                     break
             
     def getNewBlock(self): 
@@ -151,7 +153,7 @@ class Prism:
                 return 
         thresh += self.lp
         if sortition < thresh: 
-            self.proposerChain.addBlock(self.superBlock)
+            self.proposerChain.addBlock(self.superBlock, self.time)
             self.nextsuperBlock.loneTx = []
             tip = self.proposerChain.getTip()
             self.nextsuperBlock.propParent = tip

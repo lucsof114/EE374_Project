@@ -36,7 +36,7 @@ class TxChain:
 
 
 class ProposerBlock: 
-    def __init__(self, ref, parent, ind) : 
+    def __init__(self, ref, parent, ind, time) : 
         self.ind = ind
         self.parent = parent
         self.txRefs = ref
@@ -44,6 +44,7 @@ class ProposerBlock:
         self.numVotes = 0
         self.revProbLow = None #Unknown before first sync
         self.isLeader = False
+        self.time = time #time block was pushed to chain
 
 
 class ProposerChain: 
@@ -68,9 +69,9 @@ class ProposerChain:
             path = nx.dag_longest_path(g)
         return out
 
-    def addBlock(self, superblk): 
+    def addBlock(self, superblk, time): 
         parent = superblk.propParent
-        newblock = ProposerBlock(superblk.loneTx, parent, self.propLen)
+        newblock = ProposerBlock(superblk.loneTx, parent, self.propLen, time)
         self.propLen += 1
         self.chain.add_node(newblock.ind)
         if self.isgenesis: 
@@ -120,7 +121,14 @@ class VoterChain:
     
 
     def getlongestpath(self) : 
-        return [self.voterList[idx] for idx in nx.dag_longest_path(self.chain)] 
+        pth = nx.dag_longest_path(self.chain)
+        total = len(pth)
+        out = []
+        for i, p in enumerate(pth):
+            self.voterList[p].depth = total - i
+            out.append(self.voterList[p])
+
+        return out
 
 
     def addBlock(self, superblk) : 
@@ -131,7 +139,6 @@ class VoterChain:
         if self.isgenesis: 
             self.isgenesis = False
         else:
-            self.voterList[parent.ind].depth += 1
             self.chain.add_edge(parent, newBlock.ind)
         self.voterList.append(newBlock)
 
