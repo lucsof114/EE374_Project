@@ -16,19 +16,25 @@ class Elastico(object):
 		self.protocol = protocol
 
 	def get_identities(self):
+		# individual mining rates
 		lambda_n = self.lambda_0 / self.n
+		# time to complete POW
 		pow_time = np.random.exponential(1.0/lambda_n, self.n)
+		#time to communicate results
 		comm_time = np.random.uniform(0, self.delta, self.n)
+		# total time for this process is the max of the sums
 		time = np.max(pow_time + comm_time)
 		return time
 
 	def broadcast_committees(self):
+		# communication time
 		comm_time = np.random.uniform(0, self.delta, self.n)
 		time = np.max(comm_time)
 		return time
 
 	def intra_committee_consensus(self):
 		if self.protocol == "PBFT":
+			# do BFT
 			num_comm = float(self.n) / self.c
 			done_times = []
 			for i in range(int(num_comm)):
@@ -50,8 +56,10 @@ class Elastico(object):
 		return time
 
 	def generate_epoch_rand(self):
+		# broadcast random strings
 		send_time = np.random.uniform(0, self.delta, self.c)
 		time1 = np.max(send_time)
+		# run consesus protocol
 		send_time2 = np.random.uniform(0, self.delta, self.c)
 		receive_time = np.random.uniform(0, self.delta, self.c)
 		sum_time = send_time2 + receive_time
