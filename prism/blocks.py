@@ -1,8 +1,11 @@
 import networkx as nx
+
+
+
 class SuperBlock: 
     def __init__(self, numVoter): 
         self.propParent = []
-        self.vParent = [[] for _ in range(numVoter)]
+        self.vParent = [None for _ in range(numVoter)]
         self.loneTx = []
         self.Cvoter = [[] for _ in range(numVoter)]
 
@@ -42,7 +45,7 @@ class ProposerBlock:
         self.txRefs = ref
         self.level = 0
         self.numVotes = 0
-        self.revProbLow = None #Unknown before first sync
+        self.revProbLow =  0 #Unknown before first sync
         self.isLeader = False
         self.time = time #time block was pushed to chain
 
@@ -74,8 +77,8 @@ class ProposerChain:
         newblock = ProposerBlock(superblk.loneTx, parent, self.propLen, time)
         self.propLen += 1
         self.chain.add_node(newblock.ind)
-        if self.isgenesis: 
-            self.isgenesis = False
+        if len(parent) == 0: 
+            self.isgenesis = False ## get rid of genesis
         else:
             newblock.level = self.propList[parent[0]].level + 1 
             self.chain.add_edge(parent[0], newblock.ind)
@@ -136,7 +139,7 @@ class VoterChain:
         newBlock = VoterBlock(superblk.Cvoter[self.chainID], parent, self.chainLen)
         self.chainLen += 1
         self.chain.add_node(newBlock.ind)
-        if self.isgenesis: 
+        if parent == None: 
             self.isgenesis = False
         else:
             self.chain.add_edge(parent, newBlock.ind)
