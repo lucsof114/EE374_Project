@@ -2,7 +2,7 @@ import numpy as np
 
 #MAX_TIME = float('inf')
 MAX_TIME = 99999999
-TX_per_blk = 1
+TX_per_blk = 40
 
 class Node(object):
 	def __init__(self, id_num, l, delta, isBad=False):
@@ -42,7 +42,7 @@ class Committee(object):
 	def __init__(self, id_num, c, delta):
 		self.id = id_num
 		self.min_size = c
-		self.max_size = 1.1 * c
+		self.max_size = 1.05 * c
 		self.curr_size = 0
 		self.nodes = []
 		self.delta = delta
@@ -99,45 +99,34 @@ class Committee(object):
 
 	def run_PBFT(self, num_blks=1, gen_blks=True):
 		final_time = 0
-		#print("ft: " + str(final_time))
 		for iteration in range(num_blks):
-			#print(self.curr_size)
+			if iteration % 10 == 0:
+				print("Block #" + str(iteration+1))
+
 			# get leader
 			leader_idx, time1 = self.get_leader_id()
 			leader = self.nodes[leader_idx]
 
 			#pre-prepare phase
 			comm_times1 = [leader.comm_time() for i in range(self.curr_size - 1)]
-			#comm_times1 = np.concatenate(comm_times1)
-			#print(comm_times1)
 			comm_times1 = np.insert(comm_times1, leader_idx, 0)
-			#print(comm_times1)
 
 			#prepare phase
 			comm_times2 = []
 			for i in range(self.curr_size):
-				#print(comm_times2)
 				receive_times = []
 				size = 0
 				for j in range(self.curr_size):
-					#print(receive_times)
 					if j != leader_idx and j != i:
 						receive_times.append(self.nodes[j].comm_time() + comm_times1[j])
 						size += 1
-				#receive_times = np.concatenate(receive_times)
-				#print(receive_times)
 				sorted_times = np.sort(receive_times)
-				#print(sorted_times)
 				time = sorted_times[(2.0 * size / 3.0) - 1]
-				#print(time)
-				#print(time)
 				comm_times2.insert(i,time)
-			#comm_times2 = np.concatenate(comm_times2)
 
 			#commit phase
 			comm_times3 = []
 			for i in range(self.curr_size):
-				#print(comm_times3)
 				receive_times = []
 				size = 0
 				for j in range(self.curr_size):
@@ -153,14 +142,11 @@ class Committee(object):
 			time_required = sorted_final_times[(2.0 * self.min_size / 3.0) - 1] + time1
 			final_time += time_required
 
-			#print()
 			if gen_blks:
 				self.num_blocks_thru += 1
 				for n in self.nodes:
-					#print("hhhh")
 					n.incr_block_count()
 
-		#print("FT: " + str(final_time))
 		return final_time
 
 	def get_member_ids(self):
@@ -237,27 +223,25 @@ class Elastico(object):
 		# each node does a PoW
 		times = [x.mine_time() for x in self.nodes]
 		times = np.concatenate(times)
-		#print(times)
-		#times = np.array(times)
-		#print(times)
 		sorted_times = np.sort(times)
-		#print(sorted_times)
 		sorted_times = list(sorted_times)
 		times = list(times)
 
 		time_to_fill = 0
+		used = []
 		for i in range(self.n):
 			t = sorted_times[i]
-			#idx = np.where(times == t)
 			idx = times.index(t)
-			#print(idx)
 			if i < self.c:
 				# first c members go to directory committee
 				comm_id = 0
 			else:
 				comm_id = self.get_committee_assignment()
+				while comm_id in used:
+					comm_id = self.get_committee_assignment()
 			flag = self.committees[comm_id].add_node(self.nodes[idx])
 			while(flag != 0):
+				used.append(comm_id)
 				comm_id = self.get_committee_assignment()
 				flag = self.committees[comm_id].add_node(self.nodes[idx])
 			self.nodes[idx].assign_committee(comm_id)
@@ -280,33 +264,20 @@ class Elastico(object):
 		broadcast_time = []
 		for n in self.nodes:
 			comm_times = [self.nodes[i].comm_time(force=True) for i in directory_ids]
-			#print(comm_times)
-			#comm_times = np.concatenate(comm_times)
 			comm_sorted = np.sort(comm_times)
-			#print(comm_sorted)
 			size = self.committees[0].get_size()
-			#print(size)
 			broadcast_time.append(comm_sorted[(2.0 * size / 3.0) - 1])
 
-		# print("here")
-		#print(broadcast_time)
 		time1 = np.max(broadcast_time)
-		#print(time1)
-		#print(time1)
-		#print(time1)
 
 		# all other members announce themselves to directory committee
 		time2 = -1.0
 		for i in range(1,self.s):
 			member_ids = self.committees[i].get_member_ids()
 			times = [self.nodes[m].comm_time(force=True) for m in member_ids]
-			#times = np.concatenate(times)
 			max_time = np.max(times)
-			# print(times)
-			# print(max_time)
 			if max_time > time2:
 				time2 = max_time
-		#print(time2)
 
 		# directory connects shards to themselves
 		time3 = -1.0
@@ -314,38 +285,28 @@ class Elastico(object):
 			comm = self.committees[j]
 			for i in range(comm.get_size()):
 				connect_times = [self.nodes[d].comm_time() for d in directory_ids]
-				#print(connect_times)
-				#connect_times = np.concatenate(connect_times)
 				sorted_times = np.sort(connect_times)
-				#print(sorted_times)
 				cutoff = sorted_times[(2.0 * self.c / 3.0) - 1]
 				if cutoff > time3:
 					time3 = cutoff
 
 		total_time = time1 + time2 + time3
-		# print(time1)
-		# print(time2)
-		# print(time3)
 		return total_time
 
 	def intra_committee_consensus(self):
 		if self.protocol == "PBFT":
 			times = [self.committees[i].run_PBFT(self.bpe, gen_blks=True) for i in range(2,self.s)]
-			#times = np.concatenate(times)
-			#print(times)
 			return np.max(times)
 		else:
 			print("ERROR: only PBFT protocol implemented!")
 
 	def final_consensus(self):
 		time = self.committees[1].run_PBFT(num_blks=1, gen_blks=False)
-		#print(time)
 		return time
 
 	def generate_epoch_rand(self):
 		ids = self.committees[1].get_member_ids()
-		#print(ids)
-		#n = sel.committees[1].get_size()
+
 		time1_arr = []
 		for i in ids:
 			times = []
@@ -354,22 +315,17 @@ class Elastico(object):
 					times.append(self.nodes[j].comm_time())
 			sorted_times = np.sort(times)
 			time1_arr.append(sorted_times[(2.0 * self.c / 3.0) - 1])
-		#time1_arr = np.concatenate(time1_arr)
-		#print(time1_arr)
+
 		time1 = np.max(time1_arr)
 
 		time2 = self.committees[1].run_PBFT(num_blks=1, gen_blks=False)
-		#print(time2)
 
 		time3_arr = []
 		for n in self.nodes_active:
-			#print(n.id)
 			comm_times = [self.nodes[idx].comm_time() for idx in ids]
-			#comm_times = np.concatenate(comm_times)
 			sorted_times = np.sort(comm_times)
 			time3_arr.append(sorted_times[(2.0 * self.c / 3.0) - 1])
 
-		#print(time3_arr)
 		final_time = np.max(time3_arr)
 		self.clear()
 		return final_time
@@ -385,11 +341,22 @@ class Elastico(object):
 	def run_epochs(self, num_epochs=1):
 		epoch_times = []
 		for i in range(num_epochs):
+			print("Epoch #" + str(i+1))
+			print("starting Phase 1...")
 			time1 = self.get_identities()
+			print("...Phase 1 done")
+			print("starting Phase 2...")
 			time2 = self.broadcast_committees()
+			print("...Phase 2 done")
+			print("starting Phase 3...")
 			time3 = self.intra_committee_consensus()
+			print("...Phase 3 done")
+			print("starting Phase 4...")
 			time4 = self.final_consensus()
+			print("...Phase 4 done")
+			print("starting Phase 5...")
 			time5 = self.generate_epoch_rand()
+			print("...Phase 5 done")
 			time = time1 + time2 + time3 + time4 + time5
 			epoch_times.append(time)
 		return np.sum(epoch_times)
@@ -403,13 +370,12 @@ class Elastico(object):
 	def get_num_TXs(self):
 		count_blks = 0
 		for comm in self.committees:
-			#print(count_blks)
 			count_blks += comm.get_num_blks_thru()
 		return count_blks * TX_per_blk
 
 	def get_throuhgput(self):
+		time = self.run_epochs(5)
 		print("-------THROUGHPUT-------")
-		time = self.run_epochs(10)
 		print("Time: " + str(time))
 		TX_count = self.get_num_TXs()
 		print("TX Count: " + str(TX_count))
@@ -423,24 +389,25 @@ class Elastico(object):
 		count = self.get_total_num_communication()
 		print("Number of Messages Sent: " + str(count))
 		n = len(self.nodes)
-		print("Number of Active Nodes: " + str(n))
+		print("Number of Nodes: " + str(n))
 		comm_per_node = float(count) / n
 		print("Communication Per Node: " + str(comm_per_node) + " Messages per node")
 		print("")
 		return comm_per_node
 
+	def get_downloads_per_node(self):
+		print("-------DOWNLOADS-------")
+		count = 0
+		for n in self.nodes:
+			count += n.num_blocks
+		print("Number of Blocks Downloaded: " + str(count))
+		size = len(self.nodes)
+		print("Number of Nodes: " + str(size))
+		downloads_per_node = float(count) / size
+		print("Downloads Per Node: " + str(downloads_per_node) + " Blocks per node")
+		return downloads_per_node
+
 	def print_all(self):
-		# self.n = n
-		# self.c = c
-		# self.s = s
-		# self.lambda_0 = lambda_0
-		# self.beta = beta
-		# self.delta = delta
-		# self.bpe = blks_per_epoch
-		# self.protocol = protocol
-		# self.attack = attack
-		# self.nodes = []
-		# self.committees = []
 		print("Number of Nodes (N): " + str(self.n))
 		print("Minimum Size of Each Committe (C): " + str(self.c))
 		print("# of Committees (S): " + str(self.s))
@@ -455,7 +422,6 @@ class Elastico(object):
 
 		for i in range(self.n):
 			node = self.nodes[i]
-			#print(str(i))
 			print("ID: " + str(node.id) + "         Committee: " + str(node.committee) + "        Total number of messages sent: " + str(node.get_num_communication()))
 
 		print("")
@@ -469,41 +435,73 @@ class Elastico(object):
 			print(comm.get_member_ids())
 			print("# of Blocks Committed: " + str(comm.get_num_blks_thru()))
 			print("")
-			#print(comm.get_num_blks_thru())
 
+def write_to_file(f, betas, bpe_vals, c_vals, n_vals, arr, title):
+	f = open(f, "w")
 
+	c_words = ""
+	for c in c_vals:
+		c_words = c_words + str(c) + ", "
 
+	n_words = ""
+	for n in n_vals:
+		n_words = n_words + str(n) + ", "
 
-def run_experiment(n_vals, betas, c_vals):
+	f.write("---" + title + " (lambda_n = 1/100, delta = 0.01, tx_per_blk = 40)---\n\n")
+	for i, b in enumerate(betas):
+		for j, bpe in enumerate(bpe_vals):
+			f.write("   Beta = " + str(b) + "  &  bpe = " + str(bpe) + "\n")
+			for k, c in enumerate(c_vals):
+				if k == 0:
+					f.write("c (rows) = " + c_words + "\n")
+				for l, n in enumerate(n_vals):
+					if k==0 and l==0:
+						f.write("n (cols) = " + n_words + "\n")
+					f.write(" " + str(arr[i][j][k][l]) + " ")
+				f.write("\n")
+			f.write("\n")
+	f.close()
+
+def run_experiment(n_vals, betas, c_vals, bpe_vals):
 	lambda_n = 1.0/100
 	delta = 0.01
-	bpe = 10
 	protocol = "PBFT"
 
-	throughputs = np.zeros((len(c_vals), len(betas), len(n_vals)))
-	comms = np.zeros((len(c_vals), len(betas), len(n_vals)))
+	throughputs = np.zeros((len(betas), len(bpe_vals), len(c_vals), len(n_vals)))
+	comms = np.zeros((len(betas), len(bpe_vals), len(c_vals), len(n_vals)))
+	downloads = np.zeros((len(betas), len(bpe_vals), len(c_vals), len(n_vals)))
 
-	for i, c in enumerate(c_vals):
-		for j, b in enumerate(betas):
-			for k, n in enumerate(n_vals):
-				print("N = " + str(n) + "    Beta = " + str(b) + "    C = " + str(c))
-				l_0 = lambda_n * n
-				s = int((0.9 * n) / c)
-				e = Elastico(n, c, s, l_0, b, delta, bpe, protocol, attack=False)
-				val1 = e.get_throuhgput()
-				val2 = e.get_communication_per_node()
-				throughputs[i][j] = val1
-				comms[i][j] = val2
-				print("")
+	for i, b in enumerate(betas):
+		for j, bpe in enumerate(bpe_vals):
+			for k, c in enumerate(c_vals):
+				for l, n in enumerate(n_vals):
+					print("N = " + str(n) + "    Beta = " + str(b) + "    C = " + str(c) + "     bpe = " + str(bpe))
+					l_0 = lambda_n * n
+					s = int((0.9 * n) / c)
+					e = Elastico(n, c, s, l_0, b, delta, bpe, protocol, attack=False)
+					val1 = e.get_throuhgput()
+					val2 = e.get_communication_per_node()
+					val3 = e.get_downloads_per_node()
+					throughputs[i][j][k][l] = val1
+					comms[i][j][k][l] = val2
+					downloads[i][j][k][l] = val3
+					print("")
 
-	print(throughputs)
-	print(comms)
+	write_to_file("elastico_throughput_results.txt", betas, bpe_vals, c_vals, n_vals, throughputs, "THROUGHPUT in TXs per sec")
+	write_to_file("elastico_communication_results.txt", betas, bpe_vals, c_vals, n_vals, comms, "COMMUNICATION in messages per node")
+	write_to_file("elastico_download_results.txt", betas, bpe_vals, c_vals, n_vals, downloads, "DOWNLOADS in blocks per node")
 
 
 if __name__ == '__main__':
-	n_vals = [500, 1000, 2000, 3000]
-	betas = [0.1, 0.2]
-	c_vals = [50, 100]
-	run_experiment(n_vals, betas, c_vals)
+	# n_vals = [500, 1000, 2000, 3000]
+	# betas = [0.1, 0.2]
+	# c_vals = [50, 100]
+	# bpe_vals = [10, 30]
+
+	n_vals = [500, 1000, 1500]
+	betas = [0.1]
+	c_vals = [50]
+	bpe_vals = [50]
+	run_experiment(n_vals, betas, c_vals, bpe_vals)
 
 

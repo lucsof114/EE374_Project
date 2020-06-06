@@ -1,0 +1,7 @@
+---DOWNLOADS in blocks per node (lambda_n = 1/100, delta = 0.01, tx_per_blk = 40)---
+
+   Beta = 0.1  &  bpe = 50
+c (rows) = 50, 
+n (cols) = 500, 1000, 1500, 
+ 184.1  211.0  219.966666667 
+
