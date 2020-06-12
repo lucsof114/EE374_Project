@@ -1,0 +1,17 @@
+---COMMUNICATION in messages per node (lambda_n = 1/100, delta = 0.01, tx_per_blk = 40)---
+
+   Beta = 0.0  &  bpe = 50
+c (rows) = 100, 
+n (cols) = 10000, 
+ 49441.796 
+
+   Beta = 0.1  &  bpe = 50
+c (rows) = 100, 
+n (cols) = 10000, 
+ 44567.7262 
+
+   Beta = 0.2  &  bpe = 50
+c (rows) = 100, 
+n (cols) = 10000, 
+ 39709.8979 
+

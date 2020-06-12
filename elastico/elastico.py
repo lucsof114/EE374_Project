@@ -78,10 +78,20 @@ class Committee(object):
 	def full(self):
 		return self.curr_size >= self.min_size
 
+	def get_new_leader(self):
+		idx = np.random.randint(0,self.curr_size)
+		while idx == self.lead_id:
+			idx = np.random.randint(0,self.curr_size)
+		self.lead_id = idx
+		return idx
+
 	def get_leader_id(self):
+		#print("entered")
 		lead_idx = self.get_new_leader()
 		lead_time = self.nodes[lead_idx].comm_time()
-		time1 = np.min(lead_time, self.delta)
+		# print("lead_time: "  + str(lead_time))
+		time1 = min([lead_time, self.delta])
+		#print(time1)
 		while lead_time > self.delta:
 			#view_change
 			comm_times = []
@@ -91,17 +101,20 @@ class Committee(object):
 					comm_times.append(n.comm_time())
 			times_sorted = np.sort(comm_times)
 			cutoff = times_sorted[(2.0 * self.min_size / 3.0) - 1]
+			# print("cutoff: " + str(cutoff))
 			time1 += cutoff
 			lead_idx = self.get_new_leader()
 			lead_time = self.nodes[lead_idx].comm_time()
-			time1 += np.min(lead_time, self.delta)
+			# print("lead_time: "  + str(lead_time))
+			time1 += min([lead_time, self.delta])
+			#print(time1)
 		return lead_idx, time1
 
 	def run_PBFT(self, num_blks=1, gen_blks=True):
 		final_time = 0
 		for iteration in range(num_blks):
-			if iteration % 10 == 0:
-				print("Block #" + str(iteration+1))
+			# if iteration % 10 == 0:
+			# 	print("Block #" + str(iteration+1))
 
 			# get leader
 			leader_idx, time1 = self.get_leader_id()
@@ -122,6 +135,7 @@ class Committee(object):
 						size += 1
 				sorted_times = np.sort(receive_times)
 				time = sorted_times[(2.0 * size / 3.0) - 1]
+				#print(time)
 				comm_times2.insert(i,time)
 
 			#commit phase
@@ -135,11 +149,18 @@ class Committee(object):
 						size += 1
 				sorted_times = np.sort(receive_times)
 				time = sorted_times[(2.0 * size / 3.0) - 1]
+				#print(time)
 				comm_times3.insert(i,time)
 
 			#comm_times3 = np.concatenate(comm_times3)
 			sorted_final_times = np.sort(comm_times3)
 			time_required = sorted_final_times[(2.0 * self.min_size / 3.0) - 1] + time1
+			#print("time required: " + str(time_required))
+			#if time_required >= MAX_TIME:
+				#print("time1 to get leader: " + str(time1))
+				# print(comm_times1)
+				# print(comm_times2)
+				# print(comm_times3)
 			final_time += time_required
 
 			if gen_blks:
@@ -157,13 +178,6 @@ class Committee(object):
 
 	def get_size(self):
 		return self.curr_size
-
-	def get_new_leader(self):
-		idx = np.random.randint(0,self.curr_size)
-		while idx == self.lead_id:
-			idx = np.random.randint(0,self.curr_size)
-		self.lead_id = idx
-		return idx
 
 	def get_num_blks_thru(self):
 		return self.num_blocks_thru
@@ -194,6 +208,7 @@ class Elastico(object):
 		self.nodes = []
 		self.nodes_active = []
 		self.committees = []
+		self.conf_latency = -1
 
 		# create nodes
 		for i in range(n):
@@ -340,25 +355,34 @@ class Elastico(object):
 
 	def run_epochs(self, num_epochs=1):
 		epoch_times = []
+		latencies = []
 		for i in range(num_epochs):
 			print("Epoch #" + str(i+1))
-			print("starting Phase 1...")
+			# print("starting Phase 1...")
 			time1 = self.get_identities()
-			print("...Phase 1 done")
-			print("starting Phase 2...")
+			#print("time1: " + str(time1))
+			# print("...Phase 1 done")
+			# print("starting Phase 2...")
 			time2 = self.broadcast_committees()
-			print("...Phase 2 done")
-			print("starting Phase 3...")
+			#print("time2: " + str(time2))
+			# print("...Phase 2 done")
+			# print("starting Phase 3...")
 			time3 = self.intra_committee_consensus()
-			print("...Phase 3 done")
-			print("starting Phase 4...")
+			#print("time3: " + str(time3))
+			# print("...Phase 3 done")
+			# print("starting Phase 4...")
 			time4 = self.final_consensus()
-			print("...Phase 4 done")
-			print("starting Phase 5...")
+			#print("time4: " + str(time4))
+			latencies.append(time3 + time4)
+			# print("...Phase 4 done")
+			# print("starting Phase 5...")
 			time5 = self.generate_epoch_rand()
-			print("...Phase 5 done")
+			# print("...Phase 5 done")
 			time = time1 + time2 + time3 + time4 + time5
 			epoch_times.append(time)
+		conf_latency = np.mean(latencies)
+		self.conf_latency = conf_latency
+		print("")
 		return np.sum(epoch_times)
 
 	def get_total_num_communication(self):
@@ -405,7 +429,13 @@ class Elastico(object):
 		print("Number of Nodes: " + str(size))
 		downloads_per_node = float(count) / size
 		print("Downloads Per Node: " + str(downloads_per_node) + " Blocks per node")
+		print("")
 		return downloads_per_node
+
+	def get_conf_latency(self):
+		print("-------CONFIRMATION LATENCY-------")
+		print("Latency: " + str(self.conf_latency))
+		return self.conf_latency
 
 	def print_all(self):
 		print("Number of Nodes (N): " + str(self.n))
@@ -470,6 +500,7 @@ def run_experiment(n_vals, betas, c_vals, bpe_vals):
 	throughputs = np.zeros((len(betas), len(bpe_vals), len(c_vals), len(n_vals)))
 	comms = np.zeros((len(betas), len(bpe_vals), len(c_vals), len(n_vals)))
 	downloads = np.zeros((len(betas), len(bpe_vals), len(c_vals), len(n_vals)))
+	latencies = np.zeros((len(betas), len(bpe_vals), len(c_vals), len(n_vals)))
 
 	for i, b in enumerate(betas):
 		for j, bpe in enumerate(bpe_vals):
@@ -478,29 +509,32 @@ def run_experiment(n_vals, betas, c_vals, bpe_vals):
 					print("N = " + str(n) + "    Beta = " + str(b) + "    C = " + str(c) + "     bpe = " + str(bpe))
 					l_0 = lambda_n * n
 					s = int((0.9 * n) / c)
-					e = Elastico(n, c, s, l_0, b, delta, bpe, protocol, attack=False)
+					e = Elastico(n, c, s, l_0, b, delta, bpe, protocol, attack=True)
 					val1 = e.get_throuhgput()
 					val2 = e.get_communication_per_node()
 					val3 = e.get_downloads_per_node()
+					val4 = e.get_conf_latency()
 					throughputs[i][j][k][l] = val1
 					comms[i][j][k][l] = val2
 					downloads[i][j][k][l] = val3
+					latencies[i][j][k][l] = val4
 					print("")
 
-	write_to_file("elastico_throughput_results.txt", betas, bpe_vals, c_vals, n_vals, throughputs, "THROUGHPUT in TXs per sec")
-	write_to_file("elastico_communication_results.txt", betas, bpe_vals, c_vals, n_vals, comms, "COMMUNICATION in messages per node")
-	write_to_file("elastico_download_results.txt", betas, bpe_vals, c_vals, n_vals, downloads, "DOWNLOADS in blocks per node")
+	write_to_file("elastico_throughput_results6.txt", betas, bpe_vals, c_vals, n_vals, throughputs, "THROUGHPUT in TXs per sec")
+	write_to_file("elastico_communication_results6.txt", betas, bpe_vals, c_vals, n_vals, comms, "COMMUNICATION in messages per node")
+	write_to_file("elastico_download_results6.txt", betas, bpe_vals, c_vals, n_vals, downloads, "DOWNLOADS in blocks per node")
+	write_to_file("elastico_latency_results6.txt", betas, bpe_vals, c_vals, n_vals, latencies, "CONFIRMATION LATENCY in sec")
 
 
 if __name__ == '__main__':
-	# n_vals = [500, 1000, 2000, 3000]
+	#n_vals = [500, 1000, 1500, 2000, 3000]
+	#n_vals = [500, 1000, 1500, 2000, 4000, 7000]
+	n_vals = [10000]
 	# betas = [0.1, 0.2]
 	# c_vals = [50, 100]
-	# bpe_vals = [10, 30]
-
-	n_vals = [500, 1000, 1500]
-	betas = [0.1]
-	c_vals = [50]
+	# bpe_vals = [50, 75]
+	betas = [0.0, 0.10, 0.20]
+	c_vals = [100]
 	bpe_vals = [50]
 	run_experiment(n_vals, betas, c_vals, bpe_vals)
 

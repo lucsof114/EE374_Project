@@ -1,0 +1,17 @@
+---THROUGHPUT in TXs per sec (lambda_n = 1/100, delta = 0.01, tx_per_blk = 40)---
+
+   Beta = 0.0  &  bpe = 50
+c (rows) = 100, 
+n (cols) = 10000, 
+ 611.616364052 
+
+   Beta = 0.1  &  bpe = 50
+c (rows) = 100, 
+n (cols) = 10000, 
+ 612.987600866 
+
+   Beta = 0.2  &  bpe = 50
+c (rows) = 100, 
+n (cols) = 10000, 
+ 607.458890835 
+
